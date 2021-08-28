@@ -1,0 +1,457 @@
+---
+title: "Project"
+author: "Almazafa"
+date: "2/18/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(reshape2)
+library("recommenderlab")
+library(data.table)
+
+```
+
+2. Turn the table you have chosen into a ranking matrix as illustrated in class so that the rows are The users (USERS) and the columns are the items (ITEMS) and called it mat_ratings. ) If your data table is already in the required form, skip to step 3.) 
+
+
+```{r}
+#Loading the data
+ratings <- read.csv("rating.csv")
+# remove duplicates
+ratings <- unique(ratings, by = c("user_id", "anime_id"))
+
+# remove -1 ratings
+ratings <- ratings[ratings$rating > 0,]
+
+# selecting just 20k records
+ratings <- ratings[1:20000,]
+
+#naming the items
+anime <- read.csv("anime.csv")
+length(anime)
+ItemNames=anime$name[1:length(unique(ratings$rating))]
+levels(ratings$rating)=ItemNames
+
+#reformatting the ratings matrix, naming the users
+
+Mat_ratings <- ratings %>%
+# Spread into user-item format
+  spread(anime_id, rating) %>%
+  select(-user_id) %>%
+# Convert to matrix
+  as.matrix()
+
+```
+
+
+3. Upload the recommenderlab package.
+
+```{r}
+library(recommenderlab)
+```
+
+
+
+4. Convert the matrix obtained in the section. 2 For a realRatingMatrix object, as demonstrated in the code files in the lesson: Class12_recommenderlab, Class11_recommenderlab Call the matrix real_mat_ratings
+
+```{r}
+Real_mat_ratings=Mat_ratings %>%
+  as("realRatingMatrix")
+Real_mat_ratings
+```
+
+
+5. Verbal question-  based on what is learned in the code (Class11_recommenderlab)
+•	Calculate the compression ratio between the matrix obtained in section 2 and the realRatingMatrix matrix obtained in section 4.
+Hint: The object.size function.
+
+```{r}
+object.size(Real_mat_ratings)#compact storage of sparse matrices
+## 441808 bytes
+object.size(as(Real_mat_ratings, "matrix"))
+## 6711144 bytes
+object.size(as(Real_mat_ratings, "matrix")) / object.size(Real_mat_ratings)
+##compression ratio: 15.2 bytes
+```
+So the compression ratio is 0.8 bytes
+
+•	What is the advantage of saving a matrix as a realRatingMatrix object? The length of the answer to the question should not exceed two sentences.
+
+`It will binarize for an object of class "realRatingMatrix" which makes computation of determinant of a matrix has been made more efficient by saving unnecessary data storage  `
+
+•	Does this ratio match what you expected and why?
+
+`The ratio matched because we are expecting the matrix should gather alot less memory than sparse matrix`
+
+
+•	in which matrices the advantage of a realRatingMatrix type object is not significant?
+
+`the sparse matrices are the matrices where advantage of a realRatingMatrix type object is not significant`
+
+
+
+6.	The table obtained in section 4 should be processed as follows: Filter the rows (users) according to the number of ratings) not the rating itself but the number of times each user rated an item (so that each user rated at least 40 times. For this purpose, use the rowCounts command as demonstrated in Lesson 11 and Lesson 13. In addition and at the same time, filter the columns of the items (items) so that each item is rated at least 40 times. For this purpose, use the colCounts command as demonstrated in lesson 11 and lesson 13 and call the matrix real_mat_ratings_filterd Remarks:
+•	Hint 1: One row in the row index should be filtered according to logical conditions for rowCounts And in the column index according to logical conditions for colCounts) there is an example of this in the code Class11_recommenderlab
+•	if the table in your data does not have enough results (over 100 lines (of 40 ratings filtered according to 30 ratings per user) or 20 if even 30 did not solve the problem, beyond that, please contact me by email to perform this section. A good size for the resulting table is between 100 by 100 and 1000 by 1000.
+•	Hint 2: The dimensions of the object real_mat_ratings_filterd obtained can be obtained By printing the object name in the console or by running the line containing the object name in the code.
+
+
+```{r}
+Real_mat_ratings_filtered <- Real_mat_ratings[rowCounts(Real_mat_ratings)>100,
+                                              colCounts(Real_mat_ratings) > 40 ]
+Real_mat_ratings_filtered
+```
+
+7.	Choose two different distance / similarity indices) that were not demonstrated in the class code (from the list in the body of the question and calculate a distance matrix by users with the first index and by items with the second index. Save the results as similarity_users and, similarity_items respectively.
+
+```{r}
+
+Real_mat_ratings40 <- Real_mat_ratings[rowCounts(Real_mat_ratings) >40,]
+Real_mat_ratings40
+similarity_users <- similarity(Real_mat_ratings40, method =
+                                  "Euclidean", which = "users")
+
+Real_mat_ratings_item40 <- Real_mat_ratings[,colCounts(Real_mat_ratings) >40]
+Real_mat_ratings_item40
+
+similarity_items <- similarity(Real_mat_ratings_item40, method =
+                                  "Euclidean", which = "users")
+
+```
+
+
+8.	in the body of the code is stored the object recommender_models which contains the different types of recommendation models. It is then demonstrated how to search for these parameters and each model contains all the models: IBCF and UBCF. In the same way, select two other models from the model list and print the parameters that the models can have.
+
+
+```{r}
+recommender_models <- recommenderRegistry$get_entries(dataType =
+                                                        "realRatingMatrix")
+#display the model applicable to the realRatingMatrix
+recommender_models
+names(recommender_models)
+
+
+###IBCF and UBCF default parameters:
+recommender_models$IBCF_realRatingMatrix$parameters#IBCF parameters
+recommender_models$UBCF_realRatingMatrix$parameters#IBCF parameters
+```
+
+
+Part A: Build a model to recommend the first N items manually
+
+9.	Create a random vector named which_train to divide real_mat_ratings_filterd into TRAIN and TEST at a ratio of 80 percent TRAIN and 20 percent TEST.
+Vector can be based TRUE / FALSE or index dependent (both options were demonstrated in class). Create two matrices News reco_data_train and reco_data_test using which_train.
+
+```{r}
+set.seed(23)
+
+which_train <- sample(x = c(TRUE, FALSE), size = nrow(Real_mat_ratings_filtered),
+                      replace = TRUE, prob = c(0.8, 0.2))
+
+#train-test data
+reco_data_train <- Real_mat_ratings_filtered[which_train, ]
+reco_data_test <- Real_mat_ratings_filtered[!which_train, ]
+```
+
+
+10.	By using the Recommender function from the recommenderlab package, create a model Recommendation named reco_model on reco_data_train, for this purpose select a recommendation model From the list recommender_models that appears in section 8 in the code in the method field as Demonstrated in Lesson 11.
+
+```{r}
+## let us build SVD taken from names of recommender models in section 8
+reco_model <- Recommender(data = reco_data_train, method = "SVD")
+reco_model
+#Recommender of type 'SVD' for 'realRatingMatrix' 
+#learned using 42 users.
+
+class(reco_model)
+
+##Exploring the recommender model##
+model_details <- getModel(reco_model)
+model_details$description
+model_details$k
+```
+
+11.	Now using the reco_model we created in the previous section we will create a recommendation for N items for each Uses TEST.
+
+First set n_recommended, the number of items to recommend (Must set n = 8 (. Using the predict function from the recommenderlab package, we will create A list containing a recommendation forecast of N items per user, this list is called reco_predicted).
+
+```{r}
+n_recommended <- 8
+
+reco_predicted <- predict(object = reco_model, newdata = reco_data_test,
+                          n = n_recommended)
+reco_predicted
+#Recommendations as ‘topNList’ with n = 8 for 19 users.
+preds_ids <- as(reco_predicted, "list")
+
+```
+
+12.	In the body of the code I created for you the reco_matrix matrix of the N recommendations you created in the previous section. 
+The matrix columns are the users from the TEST, the rows are the N recommendations for each user.
+ Grill 3 uses a locator called Random_3_users using the sample function on a range between 1 and dim (reco_data_test) [1] which expresses the number of users in TEST. Hint: The size field in the sample function determines the number of moguls. The code will then display the N recommendations for these users (this section already appears in the body of the code.
+ 
+```{r}
+reco_matrix <- sapply(reco_predicted@items, function(x){
+  colnames(reco_data_test)[x]
+})
+Random_3_users <- reco_matrix[1:3,]
+Random_3_users
+```
+ 
+
+Part B: Building a rating prediction model by evaluationScheme and evaluating the model
+
+Note: Up to lesson 12 we calculated the similarity between each user (row (or item)) column (from the TEST and all the rows / columns in TRAIN. Next, we found who the neighbors closest to the same row were and with the help of the neighbors they calculated a forecast for the same row. A major problem with this approach is that there is a dependency between who the neighbors are closest to a particular line to the prediction of that line by the neighbors. That is, we predict neighbors by line and line by neighbors. In the next section we will eliminate this dependency by "hiding" some of the rankings in the line << Calculating the neighbors closest to the line without the hidden values << Making a forecast for the hidden values only based on the found neighbors << Evaluating the error in the forecast. 
+
+This calculation is done by setting the number of items (randomly drawn) (to be saved and not "hidden" in each row - in our code we call this variable items_to_keep. items_to_keep should be set in relation to the filtering we applied to our matrix in section 6, if we filtered the number of ratings per row to X ratings we set this number to be half X) so that half of the ratings would be hidden randomly. The line without the "hidden" values will be called "known" and the line with only the hidden values will be called "unknown" automatically - there is no need to define anything other than tems_to_keep.
+
+13.	evaluationScheme is a function from the recommenderlab package that allows you to automate a recommendation model.
+The function allows us to provide a small number of parameters and attach the rating matrix and hence perform different models very easily.
+In Lesson 12 in Code Class12_Evaluate_recommender_sys_with_RMSE you were introduced to An example of this. 
+There are two methods (method field in the evaluationScheme function) To execute it. 
+The first is called split and the main is division using a single parameter:
+•	percentage_training will be defined as the TRAIN-TEST division ratio) a single number between 0 and 1 denoting the TRAIN proportion.
+
+```{r}
+percentage_training <- 0.8 
+```
+
+
+The second we will use in practice is called cross-validation and the main thing is to divide the rating matrix into K-FOLD groups and iteratively (just like in the home exercise) to make a prediction and calculate the model error and thus compare models without "losing" data in favor of the TEST.
+ We do this by setting parameters to:
+ 
+•	n_fold The FOLD number for the data division, in a cross-validation.
+ Set this parameter between 7 and 16 as you wish. This value is entered in the k field in the function.
+
+```{r}
+which_set <- sample(x = 1:8, size = nrow(Real_mat_ratings_filtered), replace =TRUE)
+for(Fold in 1:8) {
+  which_train <- which_set == Fold
+  recc_data_train <- Real_mat_ratings_filtered[which_train, ]
+  recc_data_test <- Real_mat_ratings_filtered[!which_train, ]
+  # build the recommender
+}
+```
+
+
+•	items_to_keep The number of items to keep in each row (at random), see Note: At the beginning of Part B, this parameter is set for you in the body of the code. This value is entered in the given field in the function.
+
+```{r}
+  min(rowCounts(Real_mat_ratings_filtered)) ##
+  items_to_keep <- 9
+```
+
+•	rating_threshold The threshold below which the rating is considered "bad" and above it "good". For example for a scale of 1-5 the threshold value can average 3.5 or 4 if we Strict. This parameter will be used by us to evaluate our recommendations. Note that for a different scale of values a different threshold value is set! This value is entered in the goodRating field in the function.
+
+```{r}
+rating_threshold <- 3.5
+```
+
+
+In the body of the code, the three parameters are defined and an object called Scheme is created for you, which is the skeleton of the evaluationScheme.
+ All you have to do in this section is enter the parameter values other than the items_to_keep set for you and fill in the blank function fields as demonstrated in class.
+ 
+```{r}
+  
+n_eval <- 1
+  
+eval_sets <- evaluationScheme(data = Real_mat_ratings_filtered, 
+                                method = "split",
+                                train = percentage_training,
+                                given = items_to_keep, 
+                                goodRating = rating_threshold,
+                                k = n_eval) 
+eval_sets 
+```
+
+14.	Once we have defined a schema we will again want to use the Recommender function to build a recommendation model.
+Choose three different models for recommendation from the list in section 8)
+Be careful That the models you select will be different from those you selected in section 8. 
+Save the first model name you selected under the name model_1_to_evaluate in the code. And run the recommendation model eval_recommender_1. 
+
+```{r}
+n_fold <- 4
+eval_sets <- evaluationScheme(data = Real_mat_ratings_filtered,
+                                method = "cross-validation",
+                                k = n_fold,
+                                given = items_to_keep,
+                                goodRating = rating_threshold)
+  
+#building model
+  model_1_to_evaluat <- "UBCF"
+  model_parameters <- NULL 
+  eval_recommender_1 <- Recommender(data = getData(eval_sets, "train"),
+                                  method = model_1_to_evaluat,
+                                  parameter = model_parameters) 
+
+```
+
+
+Do the same for the second model you have chosen. model_2_to_evaluate) (and fill in the missing recommendation fields in eval_recommender_2. Run this model too. 
+
+```{r}
+  model_2_to_evaluat <- "LIBMF"
+  eval_recommender_2 <- Recommender(data = getData(eval_sets, "train"),
+                                  method = model_2_to_evaluat,
+                                  parameter = model_parameters) 
+```
+
+
+Same as for the third model, model_3_to_evaluate and the recommendation model eval_recommender_3.
+
+```{r}
+  model_3_to_evaluat <- "IBCF"
+  eval_recommender_3 <- Recommender(data = getData(eval_sets, "train"),
+                                  method = model_3_to_evaluat,
+                                  parameter = model_parameters)
+```
+
+
+
+15.	Under the item items_to_recommend select some forecast predictions we will make from the "hidden" values (single number between 10 and 20). 
+Run the predict function which predicts ratings on the hidden values, the forecast is stored in a code called eval_prediction_1.
+in the same way fill in the fields of the predict function stored in the code as eval_prediction_2 and eval_prediction_3 and ran it as well. 
+This step provides us with forecasts for rankings.
+
+```{r}
+items_to_recommend <- 10 
+  
+eval_prediction_1 <- predict(object = eval_recommender_1,
+                             newdata = getData(eval_sets, "known"),
+                             n = items_to_recommend,
+                             type = "ratings")
+eval_prediction_2 <- predict(object = eval_recommender_2,
+                             newdata = getData(eval_sets, "known"),
+                             n = items_to_recommend,
+                             type = "ratings")
+eval_prediction_3 <- predict(object = eval_recommender_3,
+                             newdata = getData(eval_sets, "known"),
+                             n = items_to_recommend,
+                             type = "ratings")
+```
+
+
+16.	it now remains for us to evaluate the performance of both models and determine who has a smaller error. 
+This is done by using the calcPredictionAccuracy function that calculates the accuracy of the model (in this case RMSE, MSE, MAE).
+In the body of the code there is an example named eval_accuracy_1_by_user For such a calculation per line (user).
+See example in lesson 12, hint: done by defining the byUser field). Next, the RMSE_1 object containing the error of the first model was defined for you.
+Fill in RMSE_2 and RMSE3 to contain the error of the second and third models and add a line that prints the minimum of the three.
+
+```{r}
+eval_accuracy1 <- calcPredictionAccuracy(x = eval_prediction_1,
+                          data = getData(eval_sets, "unknown"),
+                          byUser = FALSE)
+eval_accuracy1
+RMSE_1=eval_accuracy1[1]
+RMSE_1
+
+eval_accuracy2 <- calcPredictionAccuracy(x = eval_prediction_2,
+                          data = getData(eval_sets, "unknown"),
+                          byUser = FALSE)
+eval_accuracy2
+RMSE_2=eval_accuracy2[1]
+RMSE_2
+
+eval_accuracy3 <- calcPredictionAccuracy(x = eval_prediction_3,
+                          data = getData(eval_sets, "unknown"),
+                          byUser = FALSE)
+eval_accuracy3
+RMSE_3=eval_accuracy3[1]
+RMSE_3
+```
+
+The LIBMF gives the lowest error
+
+
+Part C: System model optimization and parameters in a systematic way  
+
+17.	According to what is learned in Lesson 13, we would like to create a list of model lists and distance indices to find an optimal model for our ranking matrix. For this purpose we will create the object Models_to_evaluate and select 6 combinations of different models) from the list in section 8 and distance indices from the list in section 7, 
+see an example of such a list in the code Class13_model_comparison_parm_optimization.
+ Within Models_to_evaluate That in the code of the various models are called Model_1 ... Model_6 when I defined Model 1 for you for example. 
+ 
+```{r}
+models_to_evaluate <- list(Model_1 = list(name = "IBCF", param = list(method = "cosine")),
+                           Model_2 = list(name = "IBCF", param = list(method = "pearson")),
+                           Model_3 = list(name = "SVD", param = list(method = "cosine")),
+                           Model_4 = list(name = "SVD", param = list(method = "pearson")),
+                           Model_5 = list(name = "UBCF", param = list(method = "cosine")),
+                           Model_6 = list(name = "RANDOM", param=NULL) )
+
+
+```
+ 
+ 
+
+18.	We would like to evaluate the different models according to the number of recommendations that each model makes for each row and produce an ROC curve. Reminder:
+
+ 
+
+The ROC curve describes the X-axis ratio ratio) The prediction rate of a score as "good" above the set threshold value while in reality the user rated it as "bad" - i.e. below the same threshold value, See rating_threshold in section 13 (and the y-axis the prediction rate of a rating as "good while it is that the user actually rated it as" good ". 
+The purple curve is a perfect prediction and the red is a random prediction.
+
+To create an ROC curve we will define a vector with a number of different recommendations in the name n_recommendations, define this vector as having 12 values) 3 between 1 and 10 of your choice and then 9 values in jumps of 10 to 100, see example in lesson 13. ) We will then evaluate the models using the evaluate function and agree to the model we created in section 13. The object created from the evaluate function was named list_results, fill in the missing fields as shown in the example in lesson 13. And run the middle code the results and produces a ROC graph.
+
+```{r}
+n_recommendations <- c(1, 5, seq(10, 100, 10))
+
+list_results <- evaluate(x = eval_sets,
+                         method = models_to_evaluate,
+                         n = n_recommendations)
+class(list_results) 
+
+# average matrices
+avg_matrices <- lapply(list_results, avg) 
+head(avg_matrices$Model_1[, 5:8])
+
+# plotting
+plot(list_results, annotate = 1,
+               legend = "topleft");title("ROC curve")
+
+
+#########
+plot(list_results, 
+               "prec/rec", annotate = 1,
+               legend = "bottomright");title("Precision-recall")
+
+```
+
+
+
+19.	Based on the graph, print the name of the best model and the distance index. 
+
+```{r}
+list_results[["Model_4"]]@results
+```
+
+
+20.	Now that we have the most successful model we want to optimize a parameter in the model. In the example in Lesson 13 the model chosen is "UBCF" and the distance index correlates "pearson", the optimization occurs on the vector of the number of neighbors vector_nn. 
+
+Based on the ROC curve what is the optimal value for the parameter you selected. Note: If there is no parameter to define and optimize in the most successful model, do so for the next model in line where there is a definable parameter and examine a number of possible values.
+ Print the most successful value in terms of an error in the model for which you optimized the parameter.
+ 
+```{r}
+vector_nn <- c(5, 10, 20, 40,80,100) 
+
+models_to_evaluate <- lapply(vector_nn, function(nn){ 
+  list(name = "SVD", param = list(method = "pearson", nn = nn)) }) 
+
+names(models_to_evaluate) <- paste0("SVD_nn_", vector_nn)
+
+list_results <- evaluate(x = eval_sets,
+                         method = models_to_evaluate,
+                         n = n_recommendations)
+
+plot(list_results, annotate = 1, legend = "topleft")
+title("ROC curve")
+
+```
+ 
+
+
+
+
+
+
