@@ -1,0 +1,216 @@
+rm(list=ls())
+Ratings=read.csv("C:/Users/almaz/AppData/Local/Packages/61954lingguang.10202F78DD1FD_5b5h4n7n89bzm/AppData/IMDB/archive/title.ratings.tsv/title.ratings.xlsx")
+#Almaza Fares 315734285
+#Sol Krengel 208950568 
+
+Row_Number = max(averageRating$tconst)
+Number_Unique_Users = length(unique(averageRating$tconst))
+Row_Number == Number_Unique_Users
+Users_Unique = unique(averageRating$tconst)
+
+Col_Number = max(averageRating$numVotes)
+Number_Unique_Items = length(unique(averageRating$numVotes))
+Col_Number == Number_Unique_Items
+Items_Unique = unique(averageRating$numVotes)
+
+Mat_Ratings=matrix(NA,
+                   nrow = Number_Unique_Users,
+                   ncol = Number_Unique_Items)
+
+rownames(Mat_Ratings)=paste0("user_",Users_Unique)
+colnames(Mat_Ratings)=paste0("item_",Items_Unique)
+
+for (i in 1:nrow(averageRating)){
+  Mat_Ratings[which(averageRating$tconst[i]==Users_Unique),
+              which(averageRating$numVotes[i]==Items_Unique)]=
+    averageRating$Rating[i]
+}
+
+Ratings_Counts=NA
+for (i in 1:nrow(Mat_Ratings))
+  Ratings_Counts[i]=length(which(Mat_Ratings[i,]>0))
+Mat_Ratings=cbind(Mat_Ratings,Ratings_Counts)
+
+sort_mat_rating=Mat_Ratings[order(Mat_Ratings[,485], decreasing = TRUE),]
+
+sort_maMat_Ratings=sort_mat_rating[1:3,1:484]
+Ratings_Counts=NA
+for (i in 1:ncol(Mat_Ratings_100))
+  Ratings_Counts[i]=length(which(Mat_Ratings_100[,i]>0))
+Mat_Ratings_100=rbind(Ratings_Counts,Mat_Ratings_100)
+Mat_Ratings_100=Mat_Ratings_100[,order(Mat_Ratings_100[1,], decreasing = TRUE)]
+Mat_Ratings_100=Mat_Ratings_100[1:100,1:100]
+
+set.seed(1414)
+Random_rows_order <- sample(x = 1:nrow(Mat_Ratings),size = nrow(Mat_Ratings))
+length(unique(Random_rows_order))
+Train_rows=Random_rows_order[1:round(nrow(Mat_Ratings)*0.80,digits = 0)]
+Test_rows=Random_rows_order[(round(nrow(Mat_Ratings)*0.80,digits = 0)+1):nrow(Mat_Ratings)]
+Mat_ratings_train <- Mat_ratings[Train_rows, ]
+Mat_ratings_test <- Mat_ratings[Test_rows, ]
+
+set.seed(4141)
+ceiling(nrow(Mat_ratings_train)/4)
+FOLD=4
+Fold_vec=rep(1:FOLD,ceiling(nrow(Mat_ratings_train)/FOLD))[1:nrow(Mat_ratings_train)]
+Rand_Fold_vec=sample(Fold_vec,
+                     size = nrow(Mat_ratings_train),
+                     replace = F)
+Mat_ratings_train=cbind(Fold=Rand_Fold_vec,Mat_ratings_train)
+head(Mat_ratings_train[,1:6])
+
+k=5
+Validation_RMSE_fold=rep(NA,Fold_Num)
+
+for(i in 1:Fold_Num){
+  
+  Train_Set = Mat_ratings_train[which((Mat_ratings_train[,1])!=i),2:ncol(Mat_ratings_train)]
+  Validation_Set = Mat_ratings_train[which(Mat_ratings_train[,1]==i),2:ncol(Mat_ratings_train)]
+   
+  M = mean(as.matrix(Train_Set),na.rm = T)
+  
+  Pred_data = as.data.frame(matrix(NA, nrow=nrow(Validation_Set), ncol=ncol(Validation_Set)))
+  
+  for (row in 1:nrow(Validation_Set)){
+    Row = Validation_Set[row,]
+    userItems <- which(!is.na(Row)) 
+    Data = rbind(Train_Set,Row) 
+    
+    MyDists = as.matrix(dist(!is.na(Data)),method = "euclidean") 
+    MyDists= MyDists + diag(nrow(MyDists))*(max(MyDists)+1) 
+    idx <- order(MyDists[,ncol(MyDists)], decreasing = F)[1:k] 
+    nn = data.frame(idx = idx, dists = MyDists[idx,ncol(MyDists)]) 
+    
+    if(sum(nn$dists)>0 & length(userItems)>0){
+      r <- as.data.frame(array(0, c(dim(Data)[2], k)))
+      
+      for(h in 1:nrow(nn)) {
+        
+        tran=t(Data[nn[h,]$idx,] * nn[h,]$dists)
+        trans=t(tran)
+        r[,h] = trans}
+      
+      r[is.na(r)] <- M 
+      
+      userReco <- rowSums(r) / sum(nn$dists)
+      userRecoIdx <- order(userReco, decreasing = T)
+      userRecoIdx <- userRecoIdx[userItems]
+      
+      Norm_Reco=3*userReco/max(userReco)
+      Pred_data[row,]=Norm_Reco
+     }
+  }
+  Validation_Set[is.na(Validation_Set)]<- M 
+  RMSE = sqrt(mean(as.matrix((Pred_data-Validation_Set)^2)))
+  Validation_RMSE_fold[i]<-c(RMSE)
+  
+  KNN_error_vec = mean(Validation_RMSE_fold)
+}
+  
+KNN_MIN=3
+KNN_MAX=8
+
+Validation_RMSE_K=matrix(NA,nrow = Fold_Num, ncol = length(KNN_MIN:KNN_MAX))
+colnames(Validation_RMSE_K)=paste0("KNN=",KNN_MIN:KNN_MAX)
+rownames(Validation_RMSE_K)=paste0("FOLD=",1:Fold_Num)
+
+for(i in KNN_MIN:KNN_MAX){ 
+  Validation_RMSE_fold=rep(NA,Fold_Num)
+  
+  for(j in 1:Fold_Num){ 
+    Train_Set = Mat_ratings_train[which(Mat_ratings_train[,1]!=j),2:ncol(Mat_ratings_train)]
+    Validation_Set = Mat_ratings_train[which(Mat_ratings_train[,1]==j),2:ncol(Mat_ratings_train)]
+    
+    M = mean(as.matrix(Train_Set),na.rm = T)
+    
+    Actual_Data = Validation_Set
+    Pred_data=as.data.frame(matrix(NA,nrow=nrow(Actual_Data),ncol=ncol(Actual_Data)))
+    
+    for (row in 1:nrow(Actual_Data)){
+      Row=Actual_Data[row,]
+      userItems <- which(!is.na(Row))
+      Data=rbind(Train_Set,Row)
+      
+      MyDists=as.matrix(dist(!is.na(Train_Set),method = "euclidean"))
+      MyDists= MyDists + diag(nrow(MyDists))*(max(MyDists)+1)
+      idx <- order(MyDists[,ncol(MyDists)], decreasing = F)[1:i] 
+      nn = data.frame(idx = idx, dists = MyDists[idx,ncol(MyDists)])
+      
+      if(sum(nn$dists)>0 & length(userItems)>0){
+        r <- as.data.frame(array(0, c(dim(Data)[2], i)))
+        
+        for(h in 1:nrow(nn)) {
+          tran=t(Data[nn[h,]$idx,] * nn[h,]$dists)
+          trans=t(tran)
+          r[,h] = trans
+        }
+        
+        r[is.na(r)] <- M
+        
+        userReco <- rowSums(r) / sum(nn$dists)
+        userRecoIdx <- order(userReco, decreasing = T) 
+        userRecoIdx <- userRecoIdx[userItems]
+        
+        Norm_Reco=3*userReco/max(userReco)
+        Pred_data[row,] = Norm_Reco}
+      
+      else{
+        Pred_data[row,] = M
+      }
+    }
+    cat(Sys.time(),"> Fold number: ",j,"\n")
+    Actual_Data[is.na(Actual_Data)]= M
+    RMSE = sqrt(mean(as.matrix((Pred_data-Actual_Data)^2)))
+    Validation_RMSE_fold[j]=RMSE
+  }
+  cat(Sys.time(),"> KNN is: ",i,"\n")
+  Validation_RMSE_K[,i-KNN_MIN+1] = Validation_RMSE_fold
+  Validation_RMSE_K
+}
+Validation_RMSE_K
+KNN_error_vec=colMeans(Validation_RMSE_K)
+KNN_error_vec
+K_MIN = which(KNN_error_vec==min(KNN_error_vec)) + KNN_MIN - 1
+K_MIN
+
+KNN = K_MIN
+Actual_Data = Mat_ratings_test
+
+Train_Set = Mat_ratings_train[,-1]
+M = mean(as.matrix(Mat_ratings_train),na.rm = T)
+Pred_data_test=as.data.frame(matrix(NA,nrow = nrow(Mat_ratings_test),ncol = ncol(Mat_ratings_test)))
+
+for (row in 1:nrow(Actual_Data)){
+  Row=Actual_Data[row,]
+  userItems <- which(!is.na(Row)) 
+  Data=rbind(Train_Set,Row)
+  
+  MyDists=as.matrix(dist(!is.na(Train_Set)),method = "euclidean") 
+  MyDists= MyDists + diag(nrow(MyDists))*(max(MyDists)+1)
+  idx <- order(MyDists[,ncol(MyDists)], decreasing = F)[1:KNN] 
+  nn = data.frame(idx = idx, dists = MyDists[idx,ncol(MyDists)]) 
+  
+  if(sum(nn$dists)>0 & length(userItems)>0){
+    
+    r <- as.data.frame(array(0, c(dim(Data)[2], KNN)))
+    
+    for(h in 1:nrow(nn)) {
+      tran=t(Data[nn[h,]$idx,] * nn[h,]$dists)
+      trans=t(tran)
+      r[,h] = trans
+    }
+    
+    r[is.na(r)] <- M
+    
+    userReco <- rowSums(r) / sum(nn$dists)
+    userRecoIdx <- order(userReco, decreasing = T) 
+    
+  Norm_Reco=3*userReco/max(userReco)
+  Pred_data_test[row,] = Norm_Reco}
+ else{
+  Pred_data_test[row,] = M
+ }}
+  
+Actual_Data[is.na(Actual_Data)] = M
+RMSE = sqrt(mean(as.matrix((Pred_data_test-Actual_Data)^2)))
+RMSE
